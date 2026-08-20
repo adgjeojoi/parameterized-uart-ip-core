@@ -1,57 +1,203 @@
-# 🚀 Robust Parameterized UART IP Core
+# Configurable UART RTL Core
 
-<div align="center">
-  <img alt="Verilog" src="https://img.shields.io/badge/Language-Verilog_HDL-blue.svg">
-  <img alt="License" src="https://img.shields.io/badge/License-MIT-green.svg">
-  <img alt="Status" src="https://img.shields.io/badge/Status-Verified_&_Simulated-success.svg">
-  <img alt="Author" src="https://img.shields.io/badge/Author-12818-orange.svg">
-</div>
+A lightweight and synthesizable **parameterized UART transmitter/receiver written in Verilog**.
 
-<br>
+Unlike fixed UART implementations such as `115200-8N1`, this design allows the UART timing and frame format to be configured through Verilog parameters.
 
-A highly parameterized, robust UART (Universal Asynchronous Receiver-Transmitter) IP core written in Verilog. Designed for mission-critical data acquisition systems, it features a deadlock-free FSM, pipelined parity snapshots, and strict 3-stage CDC (Clock Domain Crossing) protection.
+Only a few parameters need to be changed to reuse the same RTL design for different FPGA clock frequencies and UART configurations.
 
-本项目是一个基于 Verilog 编写的高度参数化、高鲁棒性 UART 串口通信 IP 核。专为高可靠性数据采集系统设计，具备无死锁状态机、流水线式校验快照以及严密的 3 级跨时钟域防护。
+## Key Feature: Fully Parameterized UART Configuration
 
----
+The main feature of this project is that the UART format is **not hard-coded**.
 
-## 🌟 Key Features (核心硬核特性)
+The following parameters can be configured directly during module instantiation:
 
-*   **Fully Parameterized (全参数化一键配置)** 
-    Support dynamic parameterization of System Clock, Baud Rate, Data Width (e.g., 8/9-bit), Stop Bits (1/2), and Parity (None/Odd/Even). Counter bit-widths are auto-inferred via `$clog2()`. 
-    *(支持系统时钟、波特率、数据位宽、停止位及校验模式的顶层泛型传参，底层计数器通过 `$clog2()` 自动推导位宽，极大提升代码复用率。)*
+| Parameter | Description | Example |
+|---|---|---:|
+| `CLK_FREQ` | FPGA system clock frequency | `50_000_000` |
+| `BAUD_RATE` | UART baud rate | `115200` |
+| `DATA_WIDTH` | Number of UART data bits | `8` |
+| `STOP_WIDTH` | Number of stop bits | `1` / `2` |
+| `CHECK_TYPE` | Parity mode | `0=None`, `1=Odd`, `2=Even` |
 
-*   **Industrial-Grade CDC (工业级 3 级跨时钟域防护)** 
-    The RX PHY embeds a 3-stage register pipeline (`d0`, `d1`, `d2`) to completely isolate metastability from asynchronous external inputs before safe edge detection.
-    *(接收端采用 3 级寄存器级联，第一级硬抗亚稳态，后两级进行安全的边沿检测，彻底封死外部异步信号带来的亚稳态泄漏。)*
+Therefore, the same UART RTL can be reused for configurations such as:
 
-*   **Deadlock-Free FSM (MAX-1 无死锁状态机)** 
-    Strict priority logic and cycle-aligned `MAX - 1` architecture eliminate any potential timing deadlocks during continuous heavy-load transmission.
-    *(严格确立控制流优先级，利用 `MAX - 1` 架构实现底层物理节拍 100% 对齐，消除连续高负载收发下潜在的时序死锁。)*
+- **8N1** — 8 data bits, no parity, 1 stop bit
+- **8O1** — 8 data bits, odd parity, 1 stop bit
+- **8E1** — 8 data bits, even parity, 1 stop bit
+- **7E2** — 7 data bits, even parity, 2 stop bits
 
-*   **1-Tick Zero-Delay Handshake (单拍零延迟握手)** 
-    Separates data logic from flags. It asserts a clean 1-clock-cycle `valid` pulse upon successful verification, perfectly ready for AXI4-Stream or asynchronous FIFOs.
-    *(接收数据与标志位绝对解耦，校验成功后输出极度干净的单周期 `valid` 脉冲，可无缝挂载下游异步 FIFO 或 AXI-Stream 接口。)*
+No modification of the UART TX/RX state logic is required.
 
-## 🔬 Target Applications (核心应用场景)
+## Example Configuration
 
-This IP is specifically tailored for hardware architectures that demand **Zero-Packet-Loss** under noisy environments. 
-*(专为需要在复杂电磁环境下保证**零丢包**的硬件架构打造。非常适合以下高精度仪器设备的数据回传：)*
+For a **50 MHz FPGA clock, 115200 baud, 8-bit data, odd parity and 1 stop bit**:
 
-- **Noise Thermometry DAQ:** Precision acquisition for noise temperature signals. *(噪声温度测量的高精度数据采集)*
-- **Quantum Voltage Standards:** Stable interface for ultra-precise sensor readings. *(量子电压标准测量的超稳态接口)*
-- **Mission-Critical Industrial Control:** Real-time feedback loops. *(关键工业控制的实时反馈环路)*
+```verilog
+uart_top #(
+    .CLK_FREQ   (50_000_000),
+    .BAUD_RATE  (115200),
+    .DATA_WIDTH (8),
+    .STOP_WIDTH (1),
+    .CHECK_TYPE (1)
+) u_uart (
+    .clk      (clk),
+    .reset    (reset),
+    .uart_rxd (uart_rxd),
+    .uart_txd (uart_txd)
+);
+```
 
-## 📁 Repository Structure (工程目录结构)
+To change the design to standard **115200-8N1**, only change:
+
+```verilog
+.CHECK_TYPE (0)
+```
+
+To use the same UART core on a **100 MHz FPGA**, only change:
+
+```verilog
+.CLK_FREQ (100_000_000)
+```
+
+The baud-rate timing is automatically recalculated from `CLK_FREQ` and `BAUD_RATE`.
+
+## UART Frame
+
+The UART frame generated and decoded by this design is:
 
 ```text
-├── rtl/                 # Hardware Design Sources (底层 RTL 源码)
-│   ├── uart_top.v       # Loopback integration top (回环测试顶层)
-│   ├── uart_rx.v        # Receiver module (接收物理层)
-│   └── uart_tx.v        # Transmitter module (发送物理层)
-├── sim/                 # Simulation Sources (仿真测试激励)
-│   └── tb_uart_top.v    # Automated Loopback Testbench
-├── images/              # Media Assets
-│   └── waveform.png     
-├── .gitignore
+          DATA_WIDTH bits        Optional
+        <--------------->         Parity        STOP_WIDTH
+        +---------------+        +------+       +--------+
+ Start  |               |        |      |       |        |
+   0    | D0 D1 ... Dn  |        | P    |       | 1 ...  |
+--------+---------------+--------+------+-------+---------> time
+         LSB first
+```
+
+UART idle level is logic `1`, and data is transmitted **LSB first**.
+
+## Project Structure
+
+```text
+.
+├── uart_rx.v          # Parameterized UART receiver
+├── uart_tx.v          # Parameterized UART transmitter
+├── uart_top.v         # UART RX-TX loopback example
+├── tb_uart_top.v      # Simulation testbench
 └── README.md
+```
+
+### `uart_rx.v`
+
+UART receiver with:
+
+- asynchronous RX input synchronization
+- center-aligned bit sampling
+- configurable data width
+- optional odd/even parity checking
+- configurable stop-bit checking
+- `rx_valid` output pulse
+- frame error detection
+
+### `uart_tx.v`
+
+UART transmitter with:
+
+- configurable baud rate
+- configurable data width
+- optional odd/even parity generation
+- configurable stop bits
+- internal transmit data register
+- `tx_busy` status output
+
+### `uart_top.v`
+
+A simple loopback demonstration:
+
+```text
+uart_rxd
+    │
+    ▼
++---------+
+| UART RX |
++---------+
+    │
+    │ parallel data
+    ▼
++---------+
+| UART TX |
++---------+
+    │
+    ▼
+uart_txd
+```
+
+Received UART data is automatically transmitted back through the TX module.
+
+## Simulation
+
+The included testbench currently uses:
+
+```text
+System Clock : 50 MHz
+Baud Rate    : 115200
+Data Width   : 8 bits
+Parity       : Odd
+Stop Bits    : 1
+```
+
+The testbench transmits:
+
+```text
+0x55
+0xA3
+```
+
+The RX module decodes the incoming serial frames and the TX module sends the received data back through the loopback path.
+
+Example simulation waveform:
+
+```markdown
+![UART Loopback Simulation](docs/uart_loopback_waveform.png)
+```
+
+## Design Notes
+
+The baud-rate counter is calculated from:
+
+```text
+CLK_FREQ / BAUD_RATE
+```
+
+This makes the UART module independent of a specific FPGA clock frequency.
+
+For example:
+
+```text
+CLK_FREQ  = 50 MHz
+BAUD_RATE = 115200
+```
+
+gives approximately:
+
+```text
+434 FPGA clock cycles / UART bit
+```
+
+The receiver also synchronizes the asynchronous `uart_rxd` input into the FPGA clock domain before UART frame detection and sampling.
+
+## Possible Future Improvements
+
+- Self-checking testbench
+- Automatic multi-configuration regression test
+- RX/TX FIFO
+- Fractional baud-rate generator
+- Oversampling and majority-vote RX sampling
+- Additional framing/parity error test cases
+- Hardware verification on FPGA development boards
+
+## License
+
+MIT License.
