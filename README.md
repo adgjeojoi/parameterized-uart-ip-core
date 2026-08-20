@@ -1,37 +1,43 @@
-# Configurable UART RTL Core
+# Parameterized UART IP Core
 
-A lightweight and synthesizable **parameterized UART transmitter/receiver written in Verilog**.
+A lightweight UART transmitter and receiver written in Verilog.
 
-Unlike fixed UART implementations such as `115200-8N1`, this design allows the UART timing and frame format to be configured through Verilog parameters.
+The main feature of this project is its **parameterized configuration**.  
+The UART communication format can be changed directly through module parameters without modifying the internal TX/RX logic.
 
-Only a few parameters need to be changed to reuse the same RTL design for different FPGA clock frequencies and UART configurations.
+## Features
 
-## Key Feature: Fully Parameterized UART Configuration
+The following parameters can be configured:
 
-The main feature of this project is that the UART format is **not hard-coded**.
+| Parameter | Description |
+|---|---|
+| `CLK_FREQ` | FPGA system clock frequency |
+| `BAUD_RATE` | UART baud rate |
+| `DATA_WIDTH` | Number of data bits |
+| `STOP_WIDTH` | Number of stop bits |
+| `CHECK_TYPE` | Parity mode: None / Odd / Even |
 
-The following parameters can be configured directly during module instantiation:
+With different parameter settings, the same RTL design can support UART formats such as:
 
-| Parameter | Description | Example |
-|---|---|---:|
-| `CLK_FREQ` | FPGA system clock frequency | `50_000_000` |
-| `BAUD_RATE` | UART baud rate | `115200` |
-| `DATA_WIDTH` | Number of UART data bits | `8` |
-| `STOP_WIDTH` | Number of stop bits | `1` / `2` |
-| `CHECK_TYPE` | Parity mode | `0=None`, `1=Odd`, `2=Even` |
+```text
+8N1
+8O1
+8E1
+7E2
+...
+```
 
-Therefore, the same UART RTL can be reused for configurations such as:
+The key idea is that the UART frame format and baud-rate timing can be changed only by modifying parameters, while the TX/RX logic remains unchanged.
 
-- **8N1** — 8 data bits, no parity, 1 stop bit
-- **8O1** — 8 data bits, odd parity, 1 stop bit
-- **8E1** — 8 data bits, even parity, 1 stop bit
-- **7E2** — 7 data bits, even parity, 2 stop bits
+## Configuration Example
 
-No modification of the UART TX/RX state logic is required.
+Example configuration:
 
-## Example Configuration
-
-For a **50 MHz FPGA clock, 115200 baud, 8-bit data, odd parity and 1 stop bit**:
+- Clock: 50 MHz
+- Baud rate: 115200
+- Data bits: 8
+- Parity: Odd
+- Stop bits: 1
 
 ```verilog
 uart_top #(
@@ -48,156 +54,129 @@ uart_top #(
 );
 ```
 
-To change the design to standard **115200-8N1**, only change:
+For example, changing:
 
 ```verilog
-.CHECK_TYPE (0)
+.CHECK_TYPE(1)
 ```
 
-To use the same UART core on a **100 MHz FPGA**, only change:
+to:
 
 ```verilog
-.CLK_FREQ (100_000_000)
+.CHECK_TYPE(0)
 ```
 
-The baud-rate timing is automatically recalculated from `CLK_FREQ` and `BAUD_RATE`.
-
-## UART Frame
-
-The UART frame generated and decoded by this design is:
-
-```text
-          DATA_WIDTH bits        Optional
-        <--------------->         Parity        STOP_WIDTH
-        +---------------+        +------+       +--------+
- Start  |               |        |      |       |        |
-   0    | D0 D1 ... Dn  |        | P    |       | 1 ...  |
---------+---------------+--------+------+-------+---------> time
-         LSB first
-```
-
-UART idle level is logic `1`, and data is transmitted **LSB first**.
-
-## Project Structure
-
-```text
-.
-├── uart_rx.v          # Parameterized UART receiver
-├── uart_tx.v          # Parameterized UART transmitter
-├── uart_top.v         # UART RX-TX loopback example
-├── tb_uart_top.v      # Simulation testbench
-└── README.md
-```
-
-### `uart_rx.v`
-
-UART receiver with:
-
-- asynchronous RX input synchronization
-- center-aligned bit sampling
-- configurable data width
-- optional odd/even parity checking
-- configurable stop-bit checking
-- `rx_valid` output pulse
-- frame error detection
-
-### `uart_tx.v`
-
-UART transmitter with:
-
-- configurable baud rate
-- configurable data width
-- optional odd/even parity generation
-- configurable stop bits
-- internal transmit data register
-- `tx_busy` status output
-
-### `uart_top.v`
-
-A simple loopback demonstration:
-
-```text
-uart_rxd
-    │
-    ▼
-+---------+
-| UART RX |
-+---------+
-    │
-    │ parallel data
-    ▼
-+---------+
-| UART TX |
-+---------+
-    │
-    ▼
-uart_txd
-```
-
-Received UART data is automatically transmitted back through the TX module.
+changes the UART format from **8O1** to **8N1**.
 
 ## Simulation
 
-The included testbench currently uses:
+The testbench uses a UART loopback structure:
 
 ```text
-System Clock : 50 MHz
-Baud Rate    : 115200
-Data Width   : 8 bits
-Parity       : Odd
-Stop Bits    : 1
+UART_RX → Received Data → UART_TX
 ```
 
-The testbench transmits:
+The test data includes:
 
 ```text
 0x55
 0xA3
 ```
 
-The RX module decodes the incoming serial frames and the TX module sends the received data back through the loopback path.
+The received data is decoded by the RX module and then transmitted again through the TX module.
 
-Example simulation waveform:
+### Simulation Waveform
 
-```markdown
-![UART Loopback Simulation](docs/uart_loopback_waveform.png)
-```
+![UART Simulation Waveform](images/waveform.png)
 
-## Design Notes
+---
 
-The baud-rate counter is calculated from:
+# 可参数化 UART IP 核
+
+这是一个使用 Verilog 实现的 UART 发送与接收模块。
+
+本项目的主要特点是支持**参数化配置**。UART 的通信格式可以直接通过模块参数进行修改，而不需要修改内部发送和接收逻辑。
+
+## 主要特点
+
+支持以下参数配置：
+
+| 参数 | 功能 |
+|---|---|
+| `CLK_FREQ` | FPGA 系统时钟频率 |
+| `BAUD_RATE` | UART 波特率 |
+| `DATA_WIDTH` | 数据位宽 |
+| `STOP_WIDTH` | 停止位数量 |
+| `CHECK_TYPE` | 校验方式：无校验 / 奇校验 / 偶校验 |
+
+通过修改参数，同一套 RTL 代码可以支持不同的 UART 格式，例如：
 
 ```text
-CLK_FREQ / BAUD_RATE
+8N1
+8O1
+8E1
+7E2
+...
 ```
 
-This makes the UART module independent of a specific FPGA clock frequency.
+该设计的核心特点是：**只需要修改参数即可改变 UART 的帧格式和波特率配置，不需要重新修改发送和接收状态机。**
 
-For example:
+## 参数配置示例
+
+例如配置为：
+
+- 时钟频率：50 MHz
+- 波特率：115200
+- 数据位：8 bit
+- 校验方式：奇校验
+- 停止位：1 bit
+
+```verilog
+uart_top #(
+    .CLK_FREQ   (50_000_000),
+    .BAUD_RATE  (115200),
+    .DATA_WIDTH (8),
+    .STOP_WIDTH (1),
+    .CHECK_TYPE (1)
+) u_uart (
+    .clk      (clk),
+    .reset    (reset),
+    .uart_rxd (uart_rxd),
+    .uart_txd (uart_txd)
+);
+```
+
+例如将：
+
+```verilog
+.CHECK_TYPE(1)
+```
+
+修改为：
+
+```verilog
+.CHECK_TYPE(0)
+```
+
+即可将 UART 格式从 **8O1** 修改为 **8N1**。
+
+## 仿真验证
+
+Testbench 采用 UART 回环方式进行验证：
 
 ```text
-CLK_FREQ  = 50 MHz
-BAUD_RATE = 115200
+UART_RX → 接收数据 → UART_TX
 ```
 
-gives approximately:
+测试数据包括：
 
 ```text
-434 FPGA clock cycles / UART bit
+0x55
+0xA3
 ```
 
-The receiver also synchronizes the asynchronous `uart_rxd` input into the FPGA clock domain before UART frame detection and sampling.
+RX 模块接收到数据后完成解析，再将数据送入 TX 模块重新发送。
 
-## Possible Future Improvements
+### 仿真波形
 
-- Self-checking testbench
-- Automatic multi-configuration regression test
-- RX/TX FIFO
-- Fractional baud-rate generator
-- Oversampling and majority-vote RX sampling
-- Additional framing/parity error test cases
-- Hardware verification on FPGA development boards
-
-## License
-
-MIT License.
+![UART Simulation Waveform](images/waveform.png)
